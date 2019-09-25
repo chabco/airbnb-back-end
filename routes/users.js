@@ -2,10 +2,11 @@ var express = require('express');
 var router = express.Router();
 const db = require('../db');
 const bcrypt = require('bcryptjs');
+const randToken = require('rand-token');
 
 /* GET users listing. */
 router.get('/', function(req, res, next) {
-	res.send('respond with a resource');
+	res.send("HELLO");
 });
 
 router.post('/signup', (req, res, next)=> {
@@ -30,21 +31,67 @@ router.post('/signup', (req, res, next)=> {
 				})
 			} else {
 				// this email has NOT been used and is added to the database
-				const insertUserQuery = ` INSERT INTO users (first, last, email, password) VALUES (?, ?, ?, ?)`
+				const insertUserQuery = ` INSERT INTO users (first, last, email, password, token) VALUES (?, ?, ?, ?, ?)`
 
 				// turn the password into something evil for db storage
 				const salt = bcrypt.genSaltSync(10);
 				const hash = bcrypt.hashSync(password, salt);
+				const token = randToken.uid(50);
 
-				db.query(insertUserQuery, [first, last, email, hash], (err2) => {
+				db.query(insertUserQuery, [first, last, email, hash, token], (err2) => {
 					if(err2){throw err2}
 					// Yay!
 					res.json({
-						msg: "userAdded"
+						msg: "userAdded",
+						token,
+						email,
+						first
 					})
 				});
 			}
 		})
+	})
+
+	router.post('/login', (req, res) => {
+		// console.log(req.body);
+		const { email, password } = req.body;
+		// first. check db for this email
+		const getEmail = `SELECT * FROM users WHERE email = ?`;
+
+		db.query(getEmail, [email], (err, results) => {
+			if (err) {throw err} // STOP
+			// check to see if there is result
+			if (results.length > 0) {
+				// found user!!
+				const theUser = results[0];
+				// NOW let's see if password is correct
+				const isValidPass = bcrypt.compareSync(password, theUser.password)
+
+				if (isValidPass) {
+					const token = randToken.uid(50);
+					const updateUserTokenQuery = `UPDATE users SET token = ? WHERE email = ?`
+					db.query(updateUserTokenQuery, [token, email], (err) => {
+						if (err) {throw err} // STOP
+					})
+					res.json({
+						msg: "loggedIn",
+						first: theUser.first,
+						email: theUser.email,
+						token
+				})
+			} else {
+				// liar liar pants on fire
+				res.json({
+					msg: "badPass"
+				})
+			}
+		} else {
+			// no match
+			res.json({
+				msg: "noEmail"
+			})
+		}
+	})
 })
 
 module.exports = router;
